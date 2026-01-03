@@ -1,21 +1,32 @@
 {
-  "name": "seiyu",
+  "name": "seiyuu",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "expo start",
-    "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
-    "lint": "expo lint"
+    "dev": "expo start --dev-client",
+    "android": "expo prebuild --clean && expo run:android",
+    "build": "expo prebuild --clean && ./android/gradlew -p android assembleRelease",
+    "install-apk": "adb install ./android/app/build/outputs/apk/release/app-release.apk",
+    "build:install-apk": "bun run build && bun run install-apk",
+    "doctor": "expo-doctor --verbose",
+    "update-packages": "expo install --check",
+    "reinstall-packages": "rm -rf node_modules package-lock.json && bun i",
+    "codegen": "graphql-codegen",
+    "lint": "biome check",
+    "format": "biome format",
+    "check": "biome check",
+    "clean": "biome check --write",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
+    "@tanstack/react-query": "^5.90.16",
     "expo": "~54.0.30",
+    "expo-asset": "~12.0.12",
+    "expo-audio": "~1.1.1",
     "expo-constants": "~18.0.12",
     "expo-font": "~14.0.10",
     "expo-haptics": "~15.0.8",
@@ -31,17 +42,21 @@
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
     "react-native-gesture-handler": "~2.28.0",
-    "react-native-worklets": "0.5.1",
     "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
-    "react-native-web": "~0.21.0"
+    "react-native-web": "~0.21.0",
+    "react-native-worklets": "0.5.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.3.10",
+    "@graphql-codegen/cli": "^6.1.0",
+    "@graphql-codegen/typescript": "^5.0.7",
+    "@graphql-codegen/typescript-operations": "^5.0.7",
+    "@graphql-codegen/typescript-react-query": "^6.1.1",
     "@types/react": "~19.1.0",
-    "typescript": "~5.9.2",
-    "eslint": "^9.25.0",
-    "eslint-config-expo": "~10.0.0"
+    "expo-doctor": "^1.17.14",
+    "typescript": "~5.9.2"
   },
   "private": true
 }
