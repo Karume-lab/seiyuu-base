@@ -38,34 +38,37 @@ export function computeFbank(waveform: Float32Array): Float32Array {
 
   // 4. FFT Setup
   const f = new FFT(N_FFT);
+
+  // FIX: Create TWO separate buffers (Input and Output)
+  const fftIn = f.createComplexArray();
   const fftOut = f.createComplexArray();
+
   const magnitudes = new Float32Array(N_FFT / 2 + 1);
 
-  // 5. Mel Filterbank Construction (Simplified 80-bin)
-  // In a real app, you might compute this once and cache it.
+  // 5. Mel Filterbank Construction
   const melFilters = createMelFilterbank(SAMPLE_RATE, N_FFT, N_MELS);
 
-  // Output Buffer: [Batch=1, Frames, 80] flattened
+  // Output Buffer
   const features = new Float32Array(numFrames * N_MELS);
 
   for (let i = 0; i < numFrames; i++) {
     const start = i * frameStep;
-    const frame = new Float32Array(N_FFT).fill(0); // Pad with zeros
+    const frame = new Float32Array(N_FFT).fill(0);
 
     // Apply Window
     for (let j = 0; j < frameLen; j++) {
       frame[j] = signal[start + j] * window[j];
     }
 
-    // Compute FFT
-    f.toComplexArray(frame, fftOut);
-    f.transform(fftOut, fftOut);
+    // FIX: Compute FFT using separate buffers
+    f.toComplexArray(frame, fftIn); // Convert real frame -> fftIn
+    f.transform(fftOut, fftIn); // Transform fftIn -> fftOut
 
     // Compute Power Spectrum
     for (let j = 0; j <= N_FFT / 2; j++) {
       const re = fftOut[2 * j];
       const im = fftOut[2 * j + 1];
-      magnitudes[j] = re * re + im * im; // Power
+      magnitudes[j] = re * re + im * im;
     }
 
     // Apply Mel Filters & Log
@@ -74,13 +77,11 @@ export function computeFbank(waveform: Float32Array): Float32Array {
       for (let k = 0; k < magnitudes.length; k++) {
         energy += magnitudes[k] * melFilters[j][k];
       }
-      // Log energy with floor (Kaldi style)
       features[i * N_MELS + j] = Math.log(Math.max(energy, 1.1920929e-7));
     }
   }
 
-  // Mean Normalization (CMS) - Important for CAM++
-  // Compute mean per dimension
+  // Mean Normalization (CMS)
   for (let j = 0; j < N_MELS; j++) {
     let sum = 0;
     for (let i = 0; i < numFrames; i++) sum += features[i * N_MELS + j];

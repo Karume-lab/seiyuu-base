@@ -84,15 +84,39 @@ export default function HomeScreen() {
 
   // 2. Setup Recorder
   useEffect(() => {
-    AudioRecord.init({
-      sampleRate: 16000,
-      channels: 1,
-      bitsPerSample: 16,
-      audioSource: 6,
-      wavFile: "input.wav",
-    });
-    if (Platform.OS === "android")
-      PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+    const setupAudio = async () => {
+      try {
+        if (Platform.OS === "android") {
+          // 1. Ask for permission FIRST
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          );
+
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert(
+              "Permission Denied",
+              "Microphone permission is required.",
+            );
+            return;
+          }
+        }
+
+        // 2. ONLY Initialize after permission is confirmed
+        AudioRecord.init({
+          sampleRate: 16000,
+          channels: 1,
+          bitsPerSample: 16,
+          audioSource: 6,
+          wavFile: "input.wav",
+        });
+
+        console.log("Audio Recorder Initialized");
+      } catch (e) {
+        console.error("Failed to init recorder:", e);
+      }
+    };
+
+    setupAudio();
   }, []);
 
   // --- Handlers ---
@@ -117,7 +141,9 @@ export default function HomeScreen() {
   const handleStopAndAnalyze = async () => {
     let audioPath = "";
 
+    // 1. Stop Recording (or just get path if paused)
     if (recState === "RECORDING") {
+      // Prevent accidental taps (debounce)
       if (Date.now() - startTimeRef.current < 1000) {
         await AudioRecord.stop();
         setRecState("IDLE");
@@ -125,6 +151,7 @@ export default function HomeScreen() {
       }
       audioPath = await AudioRecord.stop();
     } else {
+      // If IDLE or PAUSED, stop() simply returns the path of the last file
       audioPath = await AudioRecord.stop();
     }
 
@@ -133,29 +160,36 @@ export default function HomeScreen() {
 
     try {
       // ---------------------------------------------------------
-      // FIX: Modern Audio Reading (No more fetch hacks)
+      // FIX: FORCE 'file://' SCHEME FOR ANDROID
       // ---------------------------------------------------------
+      // Expo's 'File' class throws "URI is not absolute" if this is missing.
+      if (Platform.OS === "android" && !audioPath.startsWith("file://")) {
+        audioPath = `file://${audioPath}`;
+      }
 
-      // Wrap the raw path in a File object
-      // (Handles file:// prefix issues automatically)
+      console.log("Analyzing file at:", audioPath); // Debug Log
+
+      // 2. Load File using Expo SDK 52+ API
       const audioFile = new File(audioPath);
 
       if (!audioFile.exists) {
         throw new Error("Audio file not found at " + audioPath);
       }
 
-      // Read directly into ArrayBuffer (Native JSI)
+      // 3. Read directly into ArrayBuffer (Native JSI)
+      // This is much faster/safer than fetch()
       const buffer = await audioFile.arrayBuffer();
 
+      // 4. Decode WAV
       const decoded = await decode(buffer);
       const pcm = decoded.channelData[0];
 
-      // B. Compute Fbank
+      // 5. Compute Fbank
       console.log(`Computing Fbank for ${pcm.length} samples...`);
       const feats = computeFbank(pcm);
       const numFrames = feats.length / 80;
 
-      // C. ONNX Inference
+      // 6. ONNX Inference
       if (!sessionRef.current) throw new Error("Model not loaded");
 
       const inputTensor = new Tensor("float32", feats, [1, numFrames, 80]);
@@ -168,7 +202,7 @@ export default function HomeScreen() {
       const outputName = sessionRef.current.outputNames[0];
       const embedding = Array.from(results[outputName].data as Float32Array);
 
-      // D. Matching
+      // 7. Matching
       let bestMatch = "";
       let bestScore = -1;
 
@@ -182,7 +216,7 @@ export default function HomeScreen() {
 
       console.log(`Match: ${bestMatch} (${bestScore.toFixed(4)})`);
 
-      if (bestScore > 0.45) {
+      if (bestScore > 0.3) {
         router.push({
           pathname: "/results",
           params: { detectedName: bestMatch },
@@ -191,8 +225,8 @@ export default function HomeScreen() {
         Alert.alert("No Match", "Voice not recognized");
       }
     } catch (e) {
-      console.error(e);
-      Alert.alert("Error", "Analysis Failed");
+      console.error("Analysis Error:", e);
+      Alert.alert("Error", "Analysis Failed. See logs.");
     } finally {
       setIsProcessing(false);
     }
