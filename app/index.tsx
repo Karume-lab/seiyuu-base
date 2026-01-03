@@ -1,5 +1,5 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Asset } from "expo-asset";
-// 1. New API Imports (SDK 52+)
 import { File, Paths } from "expo-file-system";
 import { useRouter } from "expo-router";
 import { InferenceSession, Tensor } from "onnxruntime-react-native";
@@ -9,6 +9,7 @@ import {
   Alert,
   PermissionsAndroid,
   Platform,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -48,25 +49,14 @@ export default function HomeScreen() {
           throw new Error("Model asset has no localUri");
         }
 
-        // ---------------------------------------------------------
-        // FIX: Modern Expo FileSystem API (SDK 52+)
-        // ---------------------------------------------------------
-
-        // Define destination file using the new 'File' class and 'Paths.document'
         const destFile = new File(Paths.document, "model.onnx");
 
-        // Check if it exists (synchronous property)
         if (!destFile.exists) {
           console.log("Copying model to document directory...");
-
-          // Create a File reference for the asset
           const sourceFile = new File(modelAsset.localUri);
-
-          // Synchronous copy (JSI)
           sourceFile.copy(destFile);
         }
 
-        // Get the valid URI from the File object
         const modelPath = destFile.uri;
 
         sessionRef.current = await InferenceSession.create(modelPath, {
@@ -87,7 +77,6 @@ export default function HomeScreen() {
     const setupAudio = async () => {
       try {
         if (Platform.OS === "android") {
-          // 1. Ask for permission FIRST
           const granted = await PermissionsAndroid.request(
             PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
           );
@@ -101,7 +90,6 @@ export default function HomeScreen() {
           }
         }
 
-        // 2. ONLY Initialize after permission is confirmed
         AudioRecord.init({
           sampleRate: 16000,
           channels: 1,
@@ -141,9 +129,7 @@ export default function HomeScreen() {
   const handleStopAndAnalyze = async () => {
     let audioPath = "";
 
-    // 1. Stop Recording (or just get path if paused)
     if (recState === "RECORDING") {
-      // Prevent accidental taps (debounce)
       if (Date.now() - startTimeRef.current < 1000) {
         await AudioRecord.stop();
         setRecState("IDLE");
@@ -151,7 +137,6 @@ export default function HomeScreen() {
       }
       audioPath = await AudioRecord.stop();
     } else {
-      // If IDLE or PAUSED, stop() simply returns the path of the last file
       audioPath = await AudioRecord.stop();
     }
 
@@ -159,37 +144,24 @@ export default function HomeScreen() {
     setIsProcessing(true);
 
     try {
-      // ---------------------------------------------------------
-      // FIX: FORCE 'file://' SCHEME FOR ANDROID
-      // ---------------------------------------------------------
-      // Expo's 'File' class throws "URI is not absolute" if this is missing.
       if (Platform.OS === "android" && !audioPath.startsWith("file://")) {
         audioPath = `file://${audioPath}`;
       }
 
-      console.log("Analyzing file at:", audioPath); // Debug Log
-
-      // 2. Load File using Expo SDK 52+ API
       const audioFile = new File(audioPath);
 
       if (!audioFile.exists) {
-        throw new Error("Audio file not found at " + audioPath);
+        throw new Error(`Audio file not found at ${audioPath}`);
       }
 
-      // 3. Read directly into ArrayBuffer (Native JSI)
-      // This is much faster/safer than fetch()
       const buffer = await audioFile.arrayBuffer();
-
-      // 4. Decode WAV
       const decoded = await decode(buffer);
       const pcm = decoded.channelData[0];
 
-      // 5. Compute Fbank
       console.log(`Computing Fbank for ${pcm.length} samples...`);
       const feats = computeFbank(pcm);
       const numFrames = feats.length / 80;
 
-      // 6. ONNX Inference
       if (!sessionRef.current) throw new Error("Model not loaded");
 
       const inputTensor = new Tensor("float32", feats, [1, numFrames, 80]);
@@ -202,7 +174,6 @@ export default function HomeScreen() {
       const outputName = sessionRef.current.outputNames[0];
       const embedding = Array.from(results[outputName].data as Float32Array);
 
-      // 7. Matching
       let bestMatch = "";
       let bestScore = -1;
 
@@ -232,24 +203,33 @@ export default function HomeScreen() {
     }
   };
 
+  // Helper to determine status text
+  const getStatusText = () => {
+    if (isProcessing) return "Analyzing Voice...";
+    if (recState === "IDLE") return "Tap to Record";
+    if (recState === "PAUSED") return "Paused";
+    return "Listening...";
+  };
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Seiyuu</Text>
+      <StatusBar barStyle="light-content" backgroundColor="#121212" />
 
-      <Text style={styles.status}>
-        {recState === "IDLE"
-          ? "Ready"
-          : recState === "PAUSED"
-            ? "Paused"
-            : "Recording..."}
-      </Text>
+      {/* Header Area */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Seiyuu</Text>
+      </View>
 
+      <Text style={styles.status}>{getStatusText()}</Text>
+
+      {/* Main Controls */}
       <View style={styles.controls}>
+        {/* Toggle Button: Start / Pause / Resume / Loading */}
         <TouchableOpacity
           style={[
             styles.btn,
             styles.mainBtn,
-            (!modelReady || isProcessing) && { opacity: 0.5 },
+            (!modelReady || isProcessing) && styles.disabledBtn,
           ]}
           onPress={() => {
             if (recState === "IDLE") handleStart();
@@ -258,29 +238,35 @@ export default function HomeScreen() {
           }}
           disabled={!modelReady || isProcessing}
         >
-          <Text style={styles.btnText}>
-            {recState === "IDLE"
-              ? "Record"
-              : recState === "RECORDING"
-                ? "Pause"
-                : "Resume"}
-          </Text>
+          {isProcessing ? (
+            // LOADING SPINNER inside the button
+            <ActivityIndicator size="large" color="#FFF" />
+          ) : (
+            // Dynamic Icon
+            <Ionicons
+              name={
+                recState === "IDLE"
+                  ? "mic"
+                  : recState === "RECORDING"
+                    ? "pause"
+                    : "play"
+              }
+              size={50}
+              color="#FFF"
+            />
+          )}
         </TouchableOpacity>
 
-        {recState !== "IDLE" && (
+        {/* Stop Button (Hidden when processing or idle) */}
+        {!isProcessing && recState !== "IDLE" && (
           <TouchableOpacity
             style={[styles.btn, styles.stopBtn]}
             onPress={handleStopAndAnalyze}
-            disabled={isProcessing}
           >
-            <Text style={styles.btnText}>Stop</Text>
+            <Ionicons name="stop" size={50} color="#FFF" />
           </TouchableOpacity>
         )}
       </View>
-
-      {isProcessing && (
-        <ActivityIndicator size="large" style={{ marginTop: 20 }} />
-      )}
     </View>
   );
 }
@@ -290,35 +276,60 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#F2F2F7",
+    backgroundColor: "#121212", // Dark Mode BG
   },
-  title: { fontSize: 32, fontWeight: "bold", marginBottom: 10 },
-  status: { fontSize: 18, marginBottom: 50, color: "#666" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    position: "absolute",
+    top: 60,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 1,
+  },
+  status: {
+    fontSize: 16,
+    marginBottom: 60,
+    color: "#8E8E93",
+    fontWeight: "500",
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
+  },
   controls: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 20,
+    gap: 30,
   },
   btn: {
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
   },
   mainBtn: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "#007AFF",
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#0A84FF", // iOS Blue
+    borderWidth: 4,
+    borderColor: "rgba(255,255,255,0.1)",
   },
   stopBtn: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#FF3B30",
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#FF453A", // iOS Red
+    borderWidth: 4,
+    borderColor: "rgba(255,255,255,0.1)",
   },
-  btnText: { color: "white", fontWeight: "bold", fontSize: 18 },
+  disabledBtn: {
+    opacity: 0.8, // Less opaque so spinner is visible
+    backgroundColor: "#0A84FF",
+  },
 });
