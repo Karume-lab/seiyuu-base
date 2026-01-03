@@ -1,152 +1,198 @@
-import {
-  AudioModule,
-  AudioQuality,
-  IOSOutputFormat,
-  useAudioRecorder,
-} from "expo-audio";
+import { Asset } from "expo-asset";
+// 1. New API Imports (SDK 52+)
+import { File, Paths } from "expo-file-system";
 import { useRouter } from "expo-router";
+import { InferenceSession, Tensor } from "onnxruntime-react-native";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  PermissionsAndroid,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import AudioRecord from "react-native-audio-record";
+import { decode } from "wav-decoder";
 
 import actorDatabase from "@/assets/actor-memory.json";
-import { cosineSimilarity } from "@/lib/utils";
+import { computeFbank, cosineSimilarity } from "@/lib/utils";
 
 interface Actor {
   name: string;
   vector: number[];
 }
 
-// 1. Removed 'REVIEW' state
 type RecordingState = "IDLE" | "RECORDING" | "PAUSED";
 
-export default function RecordingScreen() {
+export default function HomeScreen() {
   const router = useRouter();
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [hasPermission, setHasPermission] = useState(false);
+  const [modelReady, setModelReady] = useState(false);
   const [recState, setRecState] = useState<RecordingState>("IDLE");
+  const [isProcessing, setIsProcessing] = useState(false);
 
+  const sessionRef = useRef<InferenceSession | null>(null);
   const startTimeRef = useRef<number>(0);
 
-  // --- RECORDER ---
-  const audioRecorder = useAudioRecorder({
-    extension: ".wav",
-    sampleRate: 16000,
-    numberOfChannels: 1,
-    bitRate: 256000,
-    android: {
-      extension: ".wav",
-      outputFormat: "default",
-      audioEncoder: "default",
-    },
-    ios: {
-      extension: ".wav",
-      audioQuality: AudioQuality.MAX,
-      outputFormat: IOSOutputFormat.LINEARPCM,
-      linearPCMBitDepth: 16,
-      linearPCMIsBigEndian: false,
-      linearPCMIsFloat: false,
-    },
-    web: {
-      mimeType: "audio/wav",
-      bitsPerSecond: 256000,
-    },
-  });
-
+  // 1. Load ONNX Model
   useEffect(() => {
     (async () => {
-      const status = await AudioModule.requestRecordingPermissionsAsync();
-      setHasPermission(status.granted);
+      try {
+        console.log("Loading Model...");
+        const modelAsset = Asset.fromModule(require("@/assets/model.onnx"));
+        await modelAsset.downloadAsync();
+
+        if (!modelAsset.localUri) {
+          throw new Error("Model asset has no localUri");
+        }
+
+        // ---------------------------------------------------------
+        // FIX: Modern Expo FileSystem API (SDK 52+)
+        // ---------------------------------------------------------
+
+        // Define destination file using the new 'File' class and 'Paths.document'
+        const destFile = new File(Paths.document, "model.onnx");
+
+        // Check if it exists (synchronous property)
+        if (!destFile.exists) {
+          console.log("Copying model to document directory...");
+
+          // Create a File reference for the asset
+          const sourceFile = new File(modelAsset.localUri);
+
+          // Synchronous copy (JSI)
+          sourceFile.copy(destFile);
+        }
+
+        // Get the valid URI from the File object
+        const modelPath = destFile.uri;
+
+        sessionRef.current = await InferenceSession.create(modelPath, {
+          executionProviders: ["cpu"],
+        });
+
+        console.log("✅ ONNX Runtime Ready");
+        setModelReady(true);
+      } catch (e) {
+        console.error(e);
+        Alert.alert("Error", "Failed to load model");
+      }
     })();
   }, []);
 
-  const handleStartRecording = async () => {
-    try {
-      if (!hasPermission) {
-        const status = await AudioModule.requestRecordingPermissionsAsync();
-        if (!status.granted) {
-          Alert.alert("Permission Required", "Microphone access is needed.");
-          return;
-        }
-      }
+  // 2. Setup Recorder
+  useEffect(() => {
+    AudioRecord.init({
+      sampleRate: 16000,
+      channels: 1,
+      bitsPerSample: 16,
+      audioSource: 6,
+      wavFile: "input.wav",
+    });
+    if (Platform.OS === "android")
+      PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+  }, []);
 
-      if (recState === "IDLE") {
-        startTimeRef.current = Date.now();
-        await audioRecorder.prepareToRecordAsync();
-      }
-
-      audioRecorder.record();
-      setRecState("RECORDING");
-    } catch (err) {
-      console.error("Failed to start recording", err);
-      Alert.alert("Error", "Could not start recording.");
-    }
+  // --- Handlers ---
+  const handleStart = () => {
+    if (!modelReady) return;
+    startTimeRef.current = Date.now();
+    AudioRecord.start();
+    setRecState("RECORDING");
   };
 
-  const handlePauseRecording = async () => {
-    if (recState === "RECORDING") {
-      await audioRecorder.pause();
-      setRecState("PAUSED");
-    }
+  const handlePause = async () => {
+    await AudioRecord.stop();
+    setRecState("PAUSED");
   };
 
-  // 2. Merged Stop + Analysis into one function
+  const handleResume = () => {
+    startTimeRef.current = Date.now();
+    AudioRecord.start();
+    setRecState("RECORDING");
+  };
+
   const handleStopAndAnalyze = async () => {
-    const durationMs = Date.now() - startTimeRef.current;
+    let audioPath = "";
 
-    if (durationMs < 1000) {
-      await audioRecorder.stop();
-      setRecState("IDLE");
-      Alert.alert("Too Short", "Please speak for at least 1 second.");
-      return;
+    if (recState === "RECORDING") {
+      if (Date.now() - startTimeRef.current < 1000) {
+        await AudioRecord.stop();
+        setRecState("IDLE");
+        return Alert.alert("Too Short", "Speak longer");
+      }
+      audioPath = await AudioRecord.stop();
+    } else {
+      audioPath = await AudioRecord.stop();
     }
 
-    // Immediately update UI to processing state
-    setIsProcessing(true);
     setRecState("IDLE");
+    setIsProcessing(true);
 
     try {
-      // Stop and get URI
-      await audioRecorder.stop();
-      const uri = audioRecorder.uri;
+      // ---------------------------------------------------------
+      // FIX: Modern Audio Reading (No more fetch hacks)
+      // ---------------------------------------------------------
 
-      if (!uri) throw new Error("No audio file generated");
+      // Wrap the raw path in a File object
+      // (Handles file:// prefix issues automatically)
+      const audioFile = new File(audioPath);
 
-      // --- MOCK INFERENCE ---
-      const userVector: number[] = Array(192)
-        .fill(0)
-        .map(() => Math.random());
-      await new Promise((r) => setTimeout(r, 1000));
-      // ---------------------
+      if (!audioFile.exists) {
+        throw new Error("Audio file not found at " + audioPath);
+      }
 
-      let bestMatchName = "";
+      // Read directly into ArrayBuffer (Native JSI)
+      const buffer = await audioFile.arrayBuffer();
+
+      const decoded = await decode(buffer);
+      const pcm = decoded.channelData[0];
+
+      // B. Compute Fbank
+      console.log(`Computing Fbank for ${pcm.length} samples...`);
+      const feats = computeFbank(pcm);
+      const numFrames = feats.length / 80;
+
+      // C. ONNX Inference
+      if (!sessionRef.current) throw new Error("Model not loaded");
+
+      const inputTensor = new Tensor("float32", feats, [1, numFrames, 80]);
+      const inputName = sessionRef.current.inputNames[0];
+
+      const results = await sessionRef.current.run({
+        [inputName]: inputTensor,
+      });
+
+      const outputName = sessionRef.current.outputNames[0];
+      const embedding = Array.from(results[outputName].data as Float32Array);
+
+      // D. Matching
+      let bestMatch = "";
       let bestScore = -1;
 
       (actorDatabase as Actor[]).forEach((actor) => {
-        const score = cosineSimilarity(userVector, actor.vector);
+        const score = cosineSimilarity(embedding, actor.vector);
         if (score > bestScore) {
           bestScore = score;
-          bestMatchName = actor.name;
+          bestMatch = actor.name;
         }
       });
 
-      if (bestScore > 0.5) {
+      console.log(`Match: ${bestMatch} (${bestScore.toFixed(4)})`);
+
+      if (bestScore > 0.45) {
         router.push({
           pathname: "/results",
-          params: { detectedName: bestMatchName || "Unknown" },
+          params: { detectedName: bestMatch },
         });
       } else {
-        Alert.alert("Not Found", "No matching voice actor found.");
+        Alert.alert("No Match", "Voice not recognized");
       }
-    } catch (error) {
-      console.error(error);
-      Alert.alert("Error", "Analysis failed.");
+    } catch (e) {
+      console.error(e);
+      Alert.alert("Error", "Analysis Failed");
     } finally {
       setIsProcessing(false);
     }
@@ -156,60 +202,51 @@ export default function RecordingScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>Seiyuu</Text>
 
-      <Text style={styles.subtitle}>
-        {isProcessing
-          ? "Analyzing..."
-          : recState === "RECORDING"
-            ? "Listening..."
-            : recState === "PAUSED"
-              ? "Paused"
-              : "Tap below to start"}
+      <Text style={styles.status}>
+        {recState === "IDLE"
+          ? "Ready"
+          : recState === "PAUSED"
+            ? "Paused"
+            : "Recording..."}
       </Text>
 
-      {/* --- IDLE --- */}
-      {recState === "IDLE" && !isProcessing && (
+      <View style={styles.controls}>
         <TouchableOpacity
-          style={styles.recordButton}
-          onPress={handleStartRecording}
+          style={[
+            styles.btn,
+            styles.mainBtn,
+            (!modelReady || isProcessing) && { opacity: 0.5 },
+          ]}
+          onPress={() => {
+            if (recState === "IDLE") handleStart();
+            else if (recState === "RECORDING") handlePause();
+            else if (recState === "PAUSED") handleResume();
+          }}
+          disabled={!modelReady || isProcessing}
         >
-          <View style={styles.recordIcon} />
+          <Text style={styles.btnText}>
+            {recState === "IDLE"
+              ? "Record"
+              : recState === "RECORDING"
+                ? "Pause"
+                : "Resume"}
+          </Text>
         </TouchableOpacity>
-      )}
 
-      {/* --- RECORDING CONTROLS --- */}
-      {(recState === "RECORDING" || recState === "PAUSED") && !isProcessing && (
-        <View style={styles.controlsRow}>
-          {/* Pause / Resume */}
+        {recState !== "IDLE" && (
           <TouchableOpacity
-            style={[styles.controlButton, styles.pauseButton]}
-            onPress={
-              recState === "RECORDING"
-                ? handlePauseRecording
-                : handleStartRecording
-            }
-          >
-            <View
-              style={
-                recState === "RECORDING" ? styles.pauseIcon : styles.playIcon
-              }
-            />
-            <Text style={styles.buttonText}>
-              {recState === "RECORDING" ? "Pause" : "Resume"}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Stop & Analyze Immediately */}
-          <TouchableOpacity
-            style={[styles.controlButton, styles.stopButton]}
+            style={[styles.btn, styles.stopBtn]}
             onPress={handleStopAndAnalyze}
+            disabled={isProcessing}
           >
-            <View style={styles.stopIcon} />
-            <Text style={styles.buttonText}>Stop</Text>
+            <Text style={styles.btnText}>Stop</Text>
           </TouchableOpacity>
-        </View>
-      )}
+        )}
+      </View>
 
-      {isProcessing && <ActivityIndicator size="large" color="#007AFF" />}
+      {isProcessing && (
+        <ActivityIndicator size="large" style={{ marginTop: 20 }} />
+      )}
     </View>
   );
 }
@@ -219,88 +256,35 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f5f5f5",
+    backgroundColor: "#F2F2F7",
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    marginBottom: 10,
-    color: "#333",
+  title: { fontSize: 32, fontWeight: "bold", marginBottom: 10 },
+  status: { fontSize: 18, marginBottom: 50, color: "#666" },
+  controls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 20,
   },
-  subtitle: {
-    fontSize: 16,
-    color: "#666",
-    marginBottom: 50,
-    height: 24,
-  },
-  recordButton: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "#fff",
+  btn: {
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 6,
-    borderColor: "#E5E5EA",
-    elevation: 4,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
   },
-  recordIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "#FF3B30",
+  mainBtn: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#007AFF",
   },
-  controlsRow: {
-    flexDirection: "row",
-    gap: 30,
-    alignItems: "center",
-  },
-  controlButton: {
+  stopBtn: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 3,
+    backgroundColor: "#FF3B30",
   },
-  pauseButton: { backgroundColor: "#FF9500" },
-  stopButton: { backgroundColor: "#FF3B30" },
-  buttonText: {
-    color: "white",
-    fontWeight: "600",
-    marginTop: 4,
-    fontSize: 12,
-  },
-  pauseIcon: {
-    width: 20,
-    height: 20,
-    borderLeftWidth: 6,
-    borderRightWidth: 6,
-    borderColor: "white",
-    backgroundColor: "transparent",
-  },
-  playIcon: {
-    width: 0,
-    height: 0,
-    backgroundColor: "transparent",
-    borderStyle: "solid",
-    borderLeftWidth: 16,
-    borderRightWidth: 0,
-    borderBottomWidth: 10,
-    borderTopWidth: 10,
-    borderLeftColor: "white",
-    borderRightColor: "transparent",
-    borderBottomColor: "transparent",
-    borderTopColor: "transparent",
-    marginLeft: 4,
-  },
-  stopIcon: {
-    width: 20,
-    height: 20,
-    backgroundColor: "white",
-    borderRadius: 3,
-  },
+  btnText: { color: "white", fontWeight: "bold", fontSize: 18 },
 });
