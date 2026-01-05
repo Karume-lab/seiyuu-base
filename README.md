@@ -96,3 +96,12 @@ While on-device inference works, I plan to migrate the heavy processing to a ded
 * **User Context:** Users are almost certainly online when using this app (watching Anime streams).
 * **App Size:** Removing the ONNX runtime and model files (~25MB+) from the app bundle will significantly reduce the download size.
 * **Performance:** Offloading allows the use of larger, more accurate models (like ERes2Net) without draining the user's battery or relying on mobile CPU limits.
+
+## License
+
+This project is open-sourced under the **GNU Affero General Public License v3.0 (AGPLv3)**.
+
+* **Free Use:** You are free to use this for research, education, or open-source projects, provided your project is also open-sourced under the AGPLv3.
+* **Commercial Use:** If you wish to use this code in a proprietary/closed-source commercial product (where you do not share your source code), you **must** purchase a Commercial License.
+
+**Contact me for commercial licensing:** karume.dev-seiyuu@gmail.com
