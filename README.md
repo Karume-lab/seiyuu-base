@@ -104,4 +104,4 @@ This project is open-sourced under the **GNU Affero General Public License v3.0 
 * **Free Use:** You are free to use this for research, education, or open-source projects, provided your project is also open-sourced under the AGPLv3.
 * **Commercial Use:** If you wish to use this code in a proprietary/closed-source commercial product (where you do not share your source code), you **must** purchase a Commercial License.
 
-**Contact me for commercial licensing:** karume.dev-seiyuu@gmail.com
+**Contact me for commercial licensing:** karume.dev+seiyuu@gmail.com
