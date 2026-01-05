@@ -7,6 +7,16 @@ This repository contains the base source code for **Seiyuu**, split into the mob
 * **`/mobile-app`**: The React Native mobile application (Frontend). Handles audio recording, UI, and on-device inference.
 * **`/memory-processor`**: The backend/service (likely Python/Node) responsible for creation of the embedding vector.
 
+## Supported Voice Actors
+
+The current `actor-memory.json` included in this release is a proof-of-concept and contains voice embeddings for only **3 specific voice actors**:
+
+1. Katsuyuki Konishi
+2. Takehito Koyasu
+3. Miyuki Sawashiro
+
+You can add more voice actors to the system by generating new vector embeddings. The process for processing audio files and updating the database is detailed in the **[Memory Processor README](memory-processor/README.md)**.
+
 ---
 
 ## Architecture
@@ -39,7 +49,7 @@ graph TD
 **1. Clone the Repository**
 
 ```bash
-git clone [https://github.com/Karume-lab/seiyuu-base.git](https://github.com/Karume-lab/seiyuu-base.git)
+git clone https://github.com/Karume-lab/seiyuu-base.git
 cd seiyuu-base
 
 ```
@@ -47,8 +57,8 @@ cd seiyuu-base
 **2. Component Setup**
 Please refer to the specific README files in each directory for detailed installation instructions.
 
-* **Mobile App**: [Go to Mobile App Setup](mobile-app/README.md)
-* **Memory Processor**: [Go to Memory Processor Setup](memory-processor/README.md)
+* **Mobile App**: [Go to Mobile App Setup](https://www.google.com/search?q=mobile-app/README.md)
+* **Memory Processor**: [Go to Memory Processor Setup](https://www.google.com/search?q=memory-processor/README.md)
 
 ---
 
@@ -62,21 +72,27 @@ During the development of the Speaker Verification module, I evaluated two State
 
 While **ERes2Net** offers excellent performance benchmarks, I was unable to implement it successfully on mobile due to runtime incompatibilities.
 
-1.  **ONNX Runtime Failure:**
-    * Loading the raw `eres2net.onnx` model directly in React Native failed immediately. The model architecture relies on complex operators that are not part of the standard mobile ONNX opset, causing "Unresolved Operator" exceptions.
+1. **ONNX Runtime Failure:**
+* Loading the raw `eres2net.onnx` model directly in React Native failed immediately. The model architecture relies on complex operators that are not part of the standard mobile ONNX opset, causing "Unresolved Operator" exceptions.
 
-2.  **TensorFlow Lite (TFLite) Conversion Failure:**
-    * In an attempt to bypass ONNX issues, I tried converting the model to TFLite for use with `react-native-fast-tflite`.
-    * **Dynamic Shapes:** ERes2Net is designed for variable-length audio. TFLite requires static shapes.
-    * **Flex Delegates:** Converting the dynamic graph forced the model to rely on "Flex Delegates" (embedding the full TensorFlow runtime). This bloated the app size and resulted in runtime crashes: `[Error: TFLite: Failed to allocate memory for input/output tensors! Status: unresolved-ops]`.
+
+2. **TensorFlow Lite (TFLite) Conversion Failure:**
+* In an attempt to bypass ONNX issues, I tried converting the model to TFLite for use with `react-native-fast-tflite`.
+* **Dynamic Shapes:** ERes2Net is designed for variable-length audio. TFLite requires static shapes.
+* **Flex Delegates:** Converting the dynamic graph forced the model to rely on "Flex Delegates" (embedding the full TensorFlow runtime). This bloated the app size and resulted in runtime crashes: `[Error: TFLite: Failed to allocate memory for input/output tensors! Status: unresolved-ops]`.
+
+
 
 ### Why Campplus Works
+
 I eventually pivoted to **Campplus**, which successfully loaded via `onnxruntime-react-native` without modification. I did not attempt a TFLite conversion for Campplus simply because the ONNX implementation worked out of the box.
 
 ### Future Architecture: Moving to Cloud Inference
+
 While on-device inference works, I plan to migrate the heavy processing to a dedicated backend (e.g., Python/Flask).
 
 **Rationale:**
+
 * **User Context:** Users are almost certainly online when using this app (watching Anime streams).
 * **App Size:** Removing the ONNX runtime and model files (~25MB+) from the app bundle will significantly reduce the download size.
 * **Performance:** Offloading allows the use of larger, more accurate models (like ERes2Net) without draining the user's battery or relying on mobile CPU limits.

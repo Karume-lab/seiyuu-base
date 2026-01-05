@@ -60,6 +60,7 @@ Open `src/campplus.py` and add the filename to the `ACTOR_MAP` dictionary:
 ACTOR_MAP = {
     "diavolo.wav": "Katsuyuki Konishi",
     "toji.wav": "Takehito Koyasu",
+    "daki.wav": "Miyuki Sawashiro",
     # Add your new actor here:
     "filename.wav": "Actor Name", 
 }
