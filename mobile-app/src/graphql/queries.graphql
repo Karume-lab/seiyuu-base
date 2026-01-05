@@ -1,0 +1,31 @@
+query GetActorInfo($name: String) {
+  Staff(search: $name) {
+    name {
+      full
+    }
+    image {
+      large
+    }
+    characterMedia(sort: POPULARITY_DESC, perPage: 5) {
+      edges {
+        node {
+          title {
+            romaji
+            english
+          }
+          coverImage {
+            medium
+          }
+        }
+        characters {
+          name {
+            full
+          }
+          image {
+            medium
+          }
+        }
+      }
+    }
+  }
+}
