@@ -57,8 +57,8 @@ cd seiyuu-base
 **2. Component Setup**
 Please refer to the specific README files in each directory for detailed installation instructions.
 
-* **Mobile App**: [Go to Mobile App Setup](https://www.google.com/search?q=mobile-app/README.md)
-* **Memory Processor**: [Go to Memory Processor Setup](https://www.google.com/search?q=memory-processor/README.md)
+* **Mobile App**: [Go to Mobile App Setup](mobile-app/README.md)
+* **Memory Processor**: [Go to Memory Processor Setup](memory-processor/README.md)
 
 ---
 
