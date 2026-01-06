@@ -19,15 +19,12 @@ Ensure you have **Python 3.8+** installed.
 
 ### 2. Environment Setup
 
-It is recommended to use the virtual environment provided (or create a new one).
-
 ```bash
-# Activate the virtual environment
 # Windows:
-.\venv\Scripts\activate
+python -m venv venv && .\venv\Scripts\activate
 
 # Mac/Linux:
-source venv/bin/activate
+python -m venv venv && source venv/bin/activate
 
 ```
 

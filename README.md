@@ -42,6 +42,9 @@ graph TD
 
 ```
 
+## Demo
+![Demo](demo.gif)
+
 ---
 
 ## Setup & Installation
