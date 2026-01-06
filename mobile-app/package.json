@@ -10,7 +10,7 @@
     "build:install-apk": "bun run build && bun run install-apk",
     "doctor": "expo-doctor --verbose",
     "update-packages": "expo install --check",
-    "reinstall-packages": "rm -rf node_modules package-lock.json && bun i",
+    "reinstall-packages": "rm -rf node_modules bun.lock && bun i",
     "codegen": "graphql-codegen",
     "lint": "biome check",
     "format": "biome format",
