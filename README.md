@@ -2,6 +2,16 @@
 
 This repository contains the base source code for **Seiyuu**, split into the mobile application and the memory processing backend.
 
+## Coming Soon: The Full Experience
+
+This repository serves as the **open-source foundation** for the project.
+
+I am currently developing a polished, consumer-ready version of Seiyuu that builds upon this architecture in a production ready fashion to deliver a seamless experience for anime fans.
+
+**[Follow the development & Join the Waitlist](https://www.google.com/search?q=https://seiyuu-app.vercel.app)**
+
+---
+
 ## Repository Structure
 
 * **`/mobile-app`**: The React Native mobile application (Frontend). Handles audio recording, UI, and on-device inference.
@@ -15,7 +25,7 @@ The current `actor-memory.json` included in this release is a proof-of-concept a
 2. Takehito Koyasu
 3. Miyuki Sawashiro
 
-You can add more voice actors to the system by generating new vector embeddings. The process for processing audio files and updating the database is detailed in the **[Memory Processor README](memory-processor/README.md)**.
+You can add more voice actors to the system by generating new vector embeddings. The process for processing audio files and updating the database is detailed in the **[Memory Processor README](https://www.google.com/search?q=memory-processor/README.md)**.
 
 ---
 
@@ -40,10 +50,10 @@ graph TD
         MemProc -->|Aggregated Data| VectorDB[(Vector Database)]
     end
 
+
 ```
 
 ## Demo
-![Demo](demo.gif)
 
 ---
 
@@ -55,13 +65,14 @@ graph TD
 git clone https://github.com/Karume-lab/seiyuu-base.git
 cd seiyuu-base
 
+
 ```
 
 **2. Component Setup**
 Please refer to the specific README files in each directory for detailed installation instructions.
 
-* **Mobile App**: [Go to Mobile App Setup](mobile-app/README.md)
-* **Memory Processor**: [Go to Memory Processor Setup](memory-processor/README.md)
+* **Mobile App**: [Go to Mobile App Setup](https://www.google.com/search?q=mobile-app/README.md)
+* **Memory Processor**: [Go to Memory Processor Setup](https://www.google.com/search?q=memory-processor/README.md)
 
 ---
 
@@ -76,15 +87,14 @@ During the development of the Speaker Verification module, I evaluated two State
 While **ERes2Net** offers excellent performance benchmarks, I was unable to implement it successfully on mobile due to runtime incompatibilities.
 
 1. **ONNX Runtime Failure:**
+
 * Loading the raw `eres2net.onnx` model directly in React Native failed immediately. The model architecture relies on complex operators that are not part of the standard mobile ONNX opset, causing "Unresolved Operator" exceptions.
 
-
 2. **TensorFlow Lite (TFLite) Conversion Failure:**
+
 * In an attempt to bypass ONNX issues, I tried converting the model to TFLite for use with `react-native-fast-tflite`.
 * **Dynamic Shapes:** ERes2Net is designed for variable-length audio. TFLite requires static shapes.
 * **Flex Delegates:** Converting the dynamic graph forced the model to rely on "Flex Delegates" (embedding the full TensorFlow runtime). This bloated the app size and resulted in runtime crashes: `[Error: TFLite: Failed to allocate memory for input/output tensors! Status: unresolved-ops]`.
-
-
 
 ### Why Campplus Works
 
